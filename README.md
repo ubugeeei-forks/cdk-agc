@@ -40,16 +40,47 @@ This helps optimize storage and streamline CI/CD caching.
 ## Installation
 
 ```bash
-# Run directly with npx (no installation needed)
-npx cdk-agc
+# Install Vite+ once
+curl -fsSL https://vite.plus | bash
 
-# Or install globally
-npm install -g cdk-agc
+# Enable Vite+ managed Node.js and install the pinned version from .node-version
+vp env on
+vp env install
+
+# Add the CLI to your workspace
+vp install -D cdk-agc
+
+# Run it through Vite+
+vp exec cdk-agc
 ```
 
 ## Requirements
 
-- Node.js >= 20.0.0
+- Node.js >= 24.0.0
+
+## Development
+
+```bash
+# Install Vite+ once
+curl -fsSL https://vite.plus | bash
+
+# Enable Vite+ managed Node.js and install the pinned version
+vp env on
+vp env install
+
+# Install dependencies with the pnpm version pinned in packageManager
+vp install
+
+# Run the default verification flow
+vp check
+
+# Package the CLI
+vp pack
+
+# Run unit and integration tests
+vp test
+vp run test:integ
+```
 
 ## Usage
 
@@ -57,31 +88,31 @@ npm install -g cdk-agc
 
 ```bash
 # Default: Clean cdk.out, keeping only referenced assets
-npx cdk-agc
+vp exec cdk-agc
 
 # Dry-run: Preview what would be deleted
-npx cdk-agc -d
+vp exec cdk-agc -d
 
 # Custom directory (useful for monorepos)
-npx cdk-agc -o ./packages/infra/cdk.out
+vp exec cdk-agc -o ./packages/infra/cdk.out
 
 # Keep assets modified within the last 24 hours
-npx cdk-agc -k 24
+vp exec cdk-agc -k 24
 
 # Clean temporary directories in $TMPDIR
-npx cdk-agc -t
+vp exec cdk-agc -t
 ```
 
 ### Options
 
-| Option | Description | Default |
-| -------- | ------------- | --------- |
-| `-o, --outdir <path>` | CDK output directory to clean | `cdk.out` |
-| `-d, --dry-run` | Show what would be deleted without deleting | `false` |
-| `-k, --keep-hours <number>` | Protect files modified within N hours | `0` |
-| `-t, --cleanup-tmp` | Clean up all temporary CDK directories in `$TMPDIR` | `false` |
-| `-h, --help` | Display help | |
-| `-V, --version` | Display version | |
+| Option                      | Description                                         | Default   |
+| --------------------------- | --------------------------------------------------- | --------- |
+| `-o, --outdir <path>`       | CDK output directory to clean                       | `cdk.out` |
+| `-d, --dry-run`             | Show what would be deleted without deleting         | `false`   |
+| `-k, --keep-hours <number>` | Protect files modified within N hours               | `0`       |
+| `-t, --cleanup-tmp`         | Clean up all temporary CDK directories in `$TMPDIR` | `false`   |
+| `-h, --help`                | Display help                                        |           |
+| `-V, --version`             | Display version                                     |           |
 
 ## What Gets Deleted?
 
@@ -120,7 +151,7 @@ npx cdk-agc -t
 ```bash
 # After switching branches or reverting commits
 git checkout feature-branch
-npx cdk-agc -k 1  # Keep last hour's assets for quick rollback
+vp exec cdk-agc -k 1  # Keep last hour's assets for quick rollback
 ```
 
 ### CI/CD Pipeline
@@ -128,10 +159,10 @@ npx cdk-agc -k 1  # Keep last hour's assets for quick rollback
 ```yaml
 # GitHub Actions example
 - name: CDK Synth
-  run: npx cdk synth
+  run: vp exec cdk synth
 
 - name: Clean unused assets
-  run: npx cdk-agc
+  run: vp exec cdk-agc
 
 - name: Cache CDK output
   uses: actions/cache@v3
@@ -144,8 +175,8 @@ npx cdk-agc -k 1  # Keep last hour's assets for quick rollback
 
 ```bash
 # Clean multiple CDK projects
-npx cdk-agc -o ./apps/api/cdk.out
-npx cdk-agc -o ./apps/web/cdk.out
+vp exec cdk-agc -o ./apps/api/cdk.out
+vp exec cdk-agc -o ./apps/web/cdk.out
 ```
 
 ### Clean Temporary Directories
@@ -156,13 +187,13 @@ CDK creates temporary directories in `$TMPDIR` during synthesis (directories sta
 
 ```bash
 # Clean all temporary CDK directories (dry-run first)
-npx cdk-agc -t -d
+vp exec cdk-agc -t -d
 
 # Actually clean them
-npx cdk-agc -t
+vp exec cdk-agc -t
 
 # Protect recent directories (last 24 hours)
-npx cdk-agc -t -k 24
+vp exec cdk-agc -t -k 24
 ```
 
 ## Docker Alternatives
@@ -172,11 +203,11 @@ By default, `cdk-agc` uses the `docker` command to manage Docker images. You can
 ```bash
 # Use Finch (AWS-supported Docker alternative)
 export CDK_DOCKER=finch
-npx cdk-agc
+vp exec cdk-agc
 
 # Use Podman
 export CDK_DOCKER=podman
-npx cdk-agc
+vp exec cdk-agc
 ```
 
 > **Note**: Depending on your environment, you may also need to set the `DOCKER_HOST` environment variable to point to the container runtime's socket. For example:

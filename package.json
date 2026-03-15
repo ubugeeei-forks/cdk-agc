@@ -2,7 +2,27 @@
   "name": "cdk-agc",
   "version": "1.13.1",
   "description": "CDK Assembly Garbage Collector - Clean up unused assets in cdk.out",
-  "type": "module",
+  "keywords": [
+    "assembly",
+    "assets",
+    "aws-cdk",
+    "cdk",
+    "cleanup",
+    "cli",
+    "cloud-assembly",
+    "garbage-collector",
+    "storage-optimization"
+  ],
+  "homepage": "https://github.com/go-to-k/cdk-agc#readme",
+  "bugs": {
+    "url": "https://github.com/go-to-k/cdk-agc/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "go-to-k",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/go-to-k/cdk-agc.git"
+  },
   "bin": {
     "cdk-agc": "dist/cli.mjs"
   },
@@ -11,43 +31,10 @@
     "README.md",
     "LICENSE"
   ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/go-to-k/cdk-agc.git"
-  },
-  "bugs": {
-    "url": "https://github.com/go-to-k/cdk-agc/issues"
-  },
-  "homepage": "https://github.com/go-to-k/cdk-agc#readme",
+  "type": "module",
   "scripts": {
-    "build": "tsdown",
-    "dev": "tsdown --watch",
-    "lint": "oxlint --type-aware --type-check src",
-    "format": "oxfmt src",
-    "format:check": "oxfmt --check src",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:integ": "pnpm build && pnpm --filter test-cdk test",
-    "test:integ:basic": "pnpm build && pnpm --filter test-cdk test:basic",
-    "test:integ:multiple": "pnpm build && pnpm --filter test-cdk test:multiple",
-    "test:integ:keep-hours": "pnpm build && pnpm --filter test-cdk test:keep-hours",
-    "semantic-release": "semantic-release",
-    "prepublishOnly": "pnpm run build"
+    "prepublishOnly": "vp pack"
   },
-  "keywords": [
-    "aws-cdk",
-    "cdk",
-    "garbage-collector",
-    "cleanup",
-    "assets",
-    "assembly",
-    "cloud-assembly",
-    "storage-optimization",
-    "cli"
-  ],
-  "author": "go-to-k",
-  "license": "Apache-2.0",
   "dependencies": {
     "commander": "^12.1.0"
   },
@@ -56,16 +43,14 @@
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^12.0.5",
     "@types/node": "^22.10.5",
-    "@vitest/coverage-v8": "^4.0.18",
-    "oxfmt": "^0.28.0",
-    "oxlint": "^1.43.0",
-    "oxlint-tsgolint": "^0.11.5",
+    "@vitest/coverage-v8": "4.1.0",
+    "@voidzero-dev/vite-plus-core": "^0.1.11",
     "semantic-release": "^25.0.3",
-    "tsdown": "^0.20.3",
     "typescript": "^5.7.3",
-    "vitest": "^4.0.18"
+    "vite-plus": "^0.1.11"
   },
   "engines": {
-    "node": ">=20.0.0"
-  }
+    "node": ">=24.0.0"
+  },
+  "packageManager": "pnpm@10.6.3"
 }

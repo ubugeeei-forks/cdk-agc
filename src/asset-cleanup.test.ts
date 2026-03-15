@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 import { promises as fs } from "fs";
 import path from "path";
 import { cleanupAssets } from "./asset-cleanup.js";
