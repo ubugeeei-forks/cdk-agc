@@ -1,3 +1,9 @@
+# [1.14.0](https://github.com/go-to-k/cdk-agc/compare/v1.13.1...v1.14.0) (2026-03-18)
+
+### Features
+
+- add verbose mode for detailed operation information ([#47](https://github.com/go-to-k/cdk-agc/issues/47)) ([5913219](https://github.com/go-to-k/cdk-agc/commit/591321901ebec5b035abfcedbe1f1a1eb8021e44))
+
 # [1.13.1](https://github.com/go-to-k/cdk-agc/compare/v1.13.0...v1.13.1) (2026-02-23)
 
 ### Bug Fixes
