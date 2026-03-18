@@ -11,13 +11,19 @@ export interface CleanupOptions {
   outdir: string;
   dryRun: boolean;
   keepHours: number;
+  verbose?: boolean;
+}
+
+interface ProtectionResult {
+  isProtected: boolean;
+  reason?: string;
 }
 
 /**
  * Clean up cdk.out directory
  */
 export async function cleanupAssets(options: CleanupOptions): Promise<void> {
-  const { outdir, dryRun, keepHours } = options;
+  const { outdir, dryRun, keepHours, verbose } = options;
 
   const fullPath = path.resolve(outdir);
   console.log(`Scanning ${fullPath}`);
@@ -30,64 +36,86 @@ export async function cleanupAssets(options: CleanupOptions): Promise<void> {
     throw new Error(`Directory not found: ${fullPath}`);
   }
 
+  if (verbose) {
+    console.log("Collecting referenced assets from *.assets.json files...");
+  }
+
   // Collect asset paths referenced in *.assets.json files
   const activePaths = await collectAssetPaths(outdir);
+
+  if (verbose) {
+    console.log(`Found ${activePaths.size} asset(s) referenced in *.assets.json files\n`);
+  }
 
   // Scan directory items
   const entries = await fs.readdir(outdir);
   const assetEntries = entries.filter((entry) => entry.startsWith("asset."));
 
+  if (verbose) {
+    console.log(
+      `Found ${assetEntries.length} total asset file(s)/directory(ies) (starting with "asset.")`,
+    );
+  }
+
   // Collect all Docker image asset paths (both active and to-be-deleted)
   const allDockerImageAssetPaths = await collectDockerImageAssetPaths(assetEntries, outdir);
 
-  const itemsToDelete = (
-    await Promise.all(
-      assetEntries.map(async (entry) => {
-        const itemPath = path.join(outdir, entry);
+  if (verbose) {
+    console.log("Analyzing assets for deletion candidates...\n");
+  }
 
-        if (await isProtected(itemPath, activePaths, keepHours)) {
-          return null;
-        }
+  const analysisResults = await Promise.all(
+    assetEntries.map(async (entry) => {
+      const itemPath = path.join(outdir, entry);
+      const protection = await checkProtection(itemPath, activePaths, keepHours);
+      const size = await calculateSize(itemPath);
+      const isDockerImageAsset = allDockerImageAssetPaths.has(itemPath);
 
-        const size = await calculateSize(itemPath);
-        const isDockerImageAsset = allDockerImageAssetPaths.has(itemPath);
-        return { path: itemPath, size, isDockerImageAsset };
-      }),
-    )
-  ).filter(
-    (item): item is { path: string; size: number; isDockerImageAsset: boolean } => item !== null,
+      return {
+        path: itemPath,
+        size,
+        isDockerImageAsset,
+        protection,
+      };
+    }),
   );
 
-  // Display results
+  const protectedItems = analysisResults.filter((item) => item.protection.isProtected);
+  const itemsToDelete = analysisResults
+    .filter((item) => !item.protection.isProtected)
+    .map(({ path, size, isDockerImageAsset }) => ({ path, size, isDockerImageAsset }));
+
+  // Display protected items if verbose
+  if (verbose) {
+    displayProtectedItems(protectedItems, outdir);
+  }
+
+  // Early return if nothing to delete
   if (itemsToDelete.length === 0) {
     console.log(`✓ No unused assets found.`);
     return;
   }
 
+  // Display items to delete and collect Docker image hashes
   console.log(`Found ${itemsToDelete.length} unused item(s):`);
+  displayItemsToDelete(itemsToDelete, outdir);
 
-  // Display items and collect Docker image hashes (from Docker image assets only)
   const dockerImageHashes = itemsToDelete
-    .map((item) => {
-      const relativePath = path.relative(outdir, item.path);
-      console.log(`  - ${relativePath} (${formatSize(item.size)})`);
-      // Extract hash only for Docker image assets
-      return item.isDockerImageAsset ? extractDockerImageHash(item.path) : null;
-    })
+    .filter((item) => item.isDockerImageAsset)
+    .map((item) => extractDockerImageHash(item.path))
     .filter((hash): hash is string => hash !== null);
 
   const totalSize = itemsToDelete.reduce((sum, item) => sum + item.size, 0);
   console.log(`\nTotal assets size to reclaim: ${formatSize(totalSize)}\n`);
 
+  // Delete assets
   if (!dryRun) {
-    await Promise.all(
-      itemsToDelete.map((item) => fs.rm(item.path, { recursive: true, force: true })),
-    );
+    await deleteAssetsWithProgress(itemsToDelete, outdir, verbose ?? false);
   }
 
   let dockerImageSize = 0;
   if (dockerImageHashes.length > 0) {
-    dockerImageSize = await deleteDockerImages(dockerImageHashes, dryRun);
+    dockerImageSize = await deleteDockerImages(dockerImageHashes, dryRun, verbose);
   }
 
   console.log("");
@@ -160,16 +188,16 @@ async function collectAssetPaths(dirPath: string): Promise<Set<string>> {
 }
 
 /**
- * Check if file/directory should be protected from deletion
+ * Check if a file/directory should be protected from deletion
  */
-async function isProtected(
+async function checkProtection(
   itemPath: string,
   activePaths: Set<string>,
   keepHours: number,
-): Promise<boolean> {
+): Promise<ProtectionResult> {
   // Protect assets referenced in *.assets.json files
   if (activePaths.has(itemPath)) {
-    return true;
+    return { isProtected: true, reason: "referenced in *.assets.json" };
   }
 
   // Protect files/directories within retention period
@@ -177,9 +205,65 @@ async function isProtected(
     const stats = await fs.stat(itemPath);
     const ageHours = (Date.now() - stats.mtimeMs) / (1000 * 60 * 60);
     if (ageHours <= keepHours) {
-      return true;
+      return { isProtected: true, reason: `modified within last ${keepHours} hour(s)` };
     }
   }
 
-  return false;
+  return { isProtected: false };
+}
+
+/**
+ * Display protected items in verbose mode
+ */
+function displayProtectedItems(
+  items: Array<{ path: string; size: number; protection: ProtectionResult }>,
+  outdir: string,
+): void {
+  if (items.length === 0) {
+    return;
+  }
+
+  console.log("Protected assets:");
+  for (const item of items) {
+    const relativePath = path.relative(outdir, item.path);
+    console.log(`  ⊘ ${relativePath} (${formatSize(item.size)}) - ${item.protection.reason}`);
+  }
+  console.log("");
+}
+
+/**
+ * Display items to be deleted
+ */
+function displayItemsToDelete(items: Array<{ path: string; size: number }>, outdir: string): void {
+  for (const item of items) {
+    const relativePath = path.relative(outdir, item.path);
+    console.log(`  - ${relativePath} (${formatSize(item.size)})`);
+  }
+}
+
+/**
+ * Delete assets with optional verbose progress output
+ */
+async function deleteAssetsWithProgress(
+  items: Array<{ path: string }>,
+  outdir: string,
+  verbose: boolean,
+): Promise<void> {
+  if (verbose) {
+    console.log("Deleting assets:");
+  }
+
+  await Promise.all(
+    items.map(async (item) => {
+      if (verbose) {
+        const relativePath = path.relative(outdir, item.path);
+        console.log(`  → Deleting ${relativePath}...`);
+      }
+      await fs.rm(item.path, { recursive: true, force: true });
+    }),
+  );
+
+  if (verbose) {
+    console.log("");
+  }
 }

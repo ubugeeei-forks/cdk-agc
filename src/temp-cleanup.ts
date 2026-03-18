@@ -6,13 +6,19 @@ import { calculateSize, formatSize } from "./utils.js";
 export interface TempCleanupOptions {
   dryRun: boolean;
   keepHours: number;
+  verbose?: boolean;
+}
+
+interface ProtectionResult {
+  isProtected: boolean;
+  reason?: string;
 }
 
 /**
  * Clean up all temporary CDK output directories
  */
 export async function cleanupTempDirectories(options: TempCleanupOptions): Promise<void> {
-  const { dryRun, keepHours } = options;
+  const { dryRun, keepHours, verbose } = options;
   const tmpdir = os.tmpdir();
 
   console.log(`Scanning ${tmpdir}`);
@@ -25,29 +31,57 @@ export async function cleanupTempDirectories(options: TempCleanupOptions): Promi
     return;
   }
 
-  let totalCleaned = 0;
-  let totalSize = 0;
+  if (verbose) {
+    console.log(`Found ${directories.length} temporary CDK directory(ies)\n`);
+  }
 
-  for (const dir of directories) {
-    try {
-      // Check if directory should be protected by age
-      if (await shouldProtectDirectory(dir, keepHours)) {
-        continue;
+  const analysisResults = await Promise.all(
+    directories.map(async (dir) => {
+      try {
+        const protection = await checkProtection(dir, keepHours);
+        const size = await calculateSize(dir);
+
+        return {
+          path: dir,
+          size,
+          protection,
+        };
+      } catch (error) {
+        if (verbose) {
+          console.warn(
+            `Warning: Failed to process ${dir}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        return null;
       }
+    }),
+  );
 
-      // Calculate size before deletion
-      const size = await calculateSize(dir);
-      totalSize += size;
+  const validResults = analysisResults.filter(
+    (result): result is { path: string; size: number; protection: ProtectionResult } =>
+      result !== null,
+  );
 
-      if (!dryRun) {
-        await fs.rm(dir, { recursive: true, force: true });
-      }
+  const protectedDirs = validResults
+    .filter((result) => result.protection.isProtected)
+    .map(({ path, protection }) => ({ path, reason: protection.reason! }));
 
-      totalCleaned++;
-    } catch {
-      // Silently continue on error
-      continue;
-    }
+  const dirsToDelete = validResults
+    .filter((result) => !result.protection.isProtected)
+    .map(({ path, size }) => ({ path, size }));
+
+  const totalCleaned = dirsToDelete.length;
+  const totalSize = dirsToDelete.reduce((sum, item) => sum + item.size, 0);
+
+  // Display verbose information
+  if (verbose) {
+    displayProtectedDirectories(protectedDirs);
+    displayDirectoriesToDelete(dirsToDelete);
+  }
+
+  // Delete directories
+  if (!dryRun && dirsToDelete.length > 0) {
+    await deleteDirectoriesWithProgress(dirsToDelete, verbose ?? false);
   }
 
   if (totalCleaned === 0) {
@@ -90,18 +124,81 @@ async function findTempDirectories(): Promise<string[]> {
 }
 
 /**
- * Check if directory should be protected based on age
+ * Check if a directory should be protected from deletion
  */
-async function shouldProtectDirectory(dirPath: string, keepHours: number): Promise<boolean> {
+async function checkProtection(dirPath: string, keepHours: number): Promise<ProtectionResult> {
   if (keepHours <= 0) {
-    return false;
+    return { isProtected: false };
   }
 
   try {
     const stats = await fs.stat(dirPath);
     const ageHours = (Date.now() - stats.mtimeMs) / (1000 * 60 * 60);
-    return ageHours <= keepHours;
+    if (ageHours <= keepHours) {
+      return { isProtected: true, reason: `modified within last ${keepHours} hour(s)` };
+    }
   } catch {
-    return false;
+    return { isProtected: false };
+  }
+
+  return { isProtected: false };
+}
+
+/**
+ * Display protected directories in verbose mode
+ */
+function displayProtectedDirectories(dirs: Array<{ path: string; reason: string }>): void {
+  if (dirs.length === 0) {
+    return;
+  }
+
+  console.log("Protected directories:");
+  for (const item of dirs) {
+    console.log(`  ⊘ ${path.basename(item.path)} - ${item.reason}`);
+  }
+  console.log("");
+}
+
+/**
+ * Display directories to be deleted in verbose mode
+ */
+function displayDirectoriesToDelete(dirs: Array<{ path: string; size: number }>): void {
+  if (dirs.length === 0) {
+    return;
+  }
+
+  console.log("Directories to delete:");
+  for (const item of dirs) {
+    console.log(`  ✓ ${path.basename(item.path)} (${formatSize(item.size)})`);
+  }
+  console.log("");
+}
+
+/**
+ * Delete directories with optional verbose progress output
+ */
+async function deleteDirectoriesWithProgress(
+  dirs: Array<{ path: string }>,
+  verbose: boolean,
+): Promise<void> {
+  if (verbose) {
+    console.log("Deleting directories:");
+  }
+
+  for (const item of dirs) {
+    try {
+      if (verbose) {
+        console.log(`  → Deleting ${path.basename(item.path)}...`);
+      }
+      await fs.rm(item.path, { recursive: true, force: true });
+    } catch (error) {
+      console.warn(
+        `Warning: Failed to delete ${item.path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  if (verbose) {
+    console.log("");
   }
 }
